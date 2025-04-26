@@ -131,3 +131,70 @@
         ERR-INVALID-TOKEN
     )
 )
+
+;; Public functions
+(define-public (create-portfolio (initial-tokens (list 10 principal)) (percentages (list 10 uint)))
+    (let (
+        (portfolio-id (+ (var-get portfolio-counter) u1))
+        (token-count (len initial-tokens))
+        (percentage-count (len percentages))
+        (token-0 (element-at? initial-tokens u0))
+        (token-1 (element-at? initial-tokens u1))
+        (percentage-0 (element-at? percentages u0))
+        (percentage-1 (element-at? percentages u1))
+    )
+    (asserts! (<= token-count MAX-TOKENS-PER-PORTFOLIO) ERR-MAX-TOKENS-EXCEEDED)
+    (asserts! (is-eq token-count percentage-count) ERR-LENGTH-MISMATCH)
+    (asserts! (validate-portfolio-percentages percentages) ERR-INVALID-PERCENTAGE)
+    
+    ;; Create portfolio
+    (map-set Portfolios portfolio-id
+        {
+            owner: tx-sender,
+            created-at: stacks-block-height,
+            last-rebalanced: stacks-block-height,
+            total-value: u0,
+            active: true,
+            token-count: token-count
+        }
+    )
+    
+    ;; Check if we have valid tokens and percentages
+    (asserts! (and (is-some token-0) (is-some token-1)) ERR-INVALID-TOKEN)
+    (asserts! (and (is-some percentage-0) (is-some percentage-1)) ERR-INVALID-PERCENTAGE)
+    
+    ;; Initialize portfolio assets
+    (try! (initialize-portfolio-asset 
+        u0 
+        (unwrap-panic token-0)
+        (unwrap-panic percentage-0)
+        portfolio-id))
+    
+    (try! (initialize-portfolio-asset 
+        u1
+        (unwrap-panic token-1)
+        (unwrap-panic percentage-1)
+        portfolio-id))
+    
+    ;; Update user's portfolio list
+    (try! (add-to-user-portfolios tx-sender portfolio-id))
+    
+    ;; Increment counter
+    (var-set portfolio-counter portfolio-id)
+    (ok portfolio-id))
+)
+
+(define-public (rebalance-portfolio (portfolio-id uint))
+    (let (
+        (portfolio (unwrap! (get-portfolio portfolio-id) ERR-INVALID-PORTFOLIO))
+    )
+    (asserts! (is-eq tx-sender (get owner portfolio)) ERR-NOT-AUTHORIZED)
+    (asserts! (get active portfolio) ERR-INVALID-PORTFOLIO)
+    
+    ;; Update last rebalanced timestamp
+    (map-set Portfolios portfolio-id
+        (merge portfolio {last-rebalanced: stacks-block-height})
+    )
+    
+    (ok true))
+)
